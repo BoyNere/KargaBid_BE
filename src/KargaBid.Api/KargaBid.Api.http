@@ -1,0 +1,148 @@
+# KargaBid API - local test requests
+# Works with Visual Studio 2022 (17.12+) and the VS Code "REST Client" extension.
+# Prereq: database\setup-local.ps1 has been run, and the API is running (F5 / dotnet run).
+# Run the three login requests first; the rest reuse their tokens.
+
+@host = https://localhost:7180
+
+### ---------- Auth ----------
+
+# @name loginMaria
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "maria.santos@kargabid.test", "password": "Password123!" }
+
+###
+
+# @name loginJose
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "jose.reyes@kargabid.test", "password": "Password123!" }
+
+###
+
+# @name loginPedro
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "pedro.garcia@kargabid.test", "password": "Password123!" }
+
+###
+
+# @name loginAna
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "ana.lopez@kargabid.test", "password": "Password123!" }
+
+###
+
+@maria = {{loginMaria.response.body.$.accessToken}}
+@jose  = {{loginJose.response.body.$.accessToken}}
+@pedro = {{loginPedro.response.body.$.accessToken}}
+@ana   = {{loginAna.response.body.$.accessToken}}
+
+### Register a new driver (201; 409 if run twice)
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Carlo Mendoza",
+  "email": "carlo.mendoza@kargabid.test",
+  "password": "Password123!",
+  "role": "Driver"
+}
+
+### ---------- Jobs ----------
+
+### Shipper creates a job (201)
+POST {{host}}/api/jobs
+Authorization: Bearer {{maria}}
+Content-Type: application/json
+
+{
+  "pickupLocation": "Mandaluyong City, Metro Manila",
+  "dropOffLocation": "Antipolo City, Rizal",
+  "cargoDescription": "Household move: 1 sofa, 1 bed frame, 15 boxes",
+  "targetBudget": 4500,
+  "cargoImageUrl": "https://picsum.photos/seed/kargabid-new/600/400"
+}
+
+### Driver lists open jobs (200: J1, J2, J3, J6 + any you created)
+GET {{host}}/api/jobs/open?page=1&pageSize=20
+Authorization: Bearer {{pedro}}
+
+### Shipper tries to list open jobs (403 - Driver only)
+GET {{host}}/api/jobs/open
+Authorization: Bearer {{maria}}
+
+### No token (401)
+GET {{host}}/api/jobs/open
+
+### ---------- Bidding ----------
+
+### Ana bids on J2 (201)
+POST {{host}}/api/jobs/22222222-0000-0000-0000-000000000002/bids
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+
+{ "bidAmount": 11000 }
+
+### Pedro bids again on J1 (409 - already bid)
+POST {{host}}/api/jobs/22222222-0000-0000-0000-000000000001/bids
+Authorization: Bearer {{pedro}}
+Content-Type: application/json
+
+{ "bidAmount": 7500 }
+
+### Ana bids on J4, already InProgress (409)
+POST {{host}}/api/jobs/22222222-0000-0000-0000-000000000004/bids
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+
+{ "bidAmount": 12000 }
+
+### Jose views bids on J6 (200, lowest first: Pedro 7200, Ana 7450, Juan 7600)
+GET {{host}}/api/jobs/22222222-0000-0000-0000-000000000006/bids
+Authorization: Bearer {{jose}}
+
+### Maria views bids on Jose's J6 (404 - not her job)
+GET {{host}}/api/jobs/22222222-0000-0000-0000-000000000006/bids
+Authorization: Bearer {{maria}}
+
+### Jose accepts Pedro's bid on J6 (200, rejectedBidCount = 2; J6 -> InProgress)
+POST {{host}}/api/bids/33333333-0000-0000-0000-000000000010/accept
+Authorization: Bearer {{jose}}
+
+### Accept again / accept another bid on J6 (409 - already awarded)
+POST {{host}}/api/bids/33333333-0000-0000-0000-000000000011/accept
+Authorization: Bearer {{jose}}
+
+### Confirm statuses on J6 (Pedro Accepted, Ana + Juan Rejected)
+GET {{host}}/api/jobs/22222222-0000-0000-0000-000000000006/bids
+Authorization: Bearer {{jose}}
+
+### ---------- Delivery status ----------
+
+### Pedro completes J4 (200: InProgress -> Completed)
+PATCH {{host}}/api/jobs/22222222-0000-0000-0000-000000000004/status
+Authorization: Bearer {{pedro}}
+Content-Type: application/json
+
+{ "status": "Completed" }
+
+### Ana tries to update J4 (404 - not the assigned driver)
+PATCH {{host}}/api/jobs/22222222-0000-0000-0000-000000000004/status
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+
+{ "status": "Completed" }
+
+### Pedro tries to reopen J4 (409 - invalid transition)
+PATCH {{host}}/api/jobs/22222222-0000-0000-0000-000000000004/status
+Authorization: Bearer {{pedro}}
+Content-Type: application/json
+
+{ "status": "Open" }

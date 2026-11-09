@@ -1,13 +1,21 @@
 /* ============================================================================
-   KargaBid - SQL Server schema (reference / DBA review)
+   KargaBid - SQL Server schema
    Mirrors the model in src/KargaBid.Api/Data/KargaBidDbContext.cs.
-   The source of truth is EF Core migrations:  dotnet ef database update
-   ============================================================================ */
 
-IF DB_ID(N'KargaBid') IS NULL
-    CREATE DATABASE [KargaBid];
+   Run against an existing database (it does not create one), e.g.:
+     sqlcmd -S "(localdb)\MSSQLLocalDB" -d KargaBid -i database\schema.sql
+   Or just run database\setup-local.ps1, which creates the DB and seeds it.
+
+   Re-runnable: drops and recreates the three tables (ALL DATA IS LOST).
+   ============================================================================ */
+SET NOCOUNT ON;
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;  -- required for the filtered index (sqlcmd defaults to OFF)
 GO
-USE [KargaBid];
+
+IF OBJECT_ID(N'dbo.Bids',  N'U') IS NOT NULL DROP TABLE [dbo].[Bids];
+IF OBJECT_ID(N'dbo.Jobs',  N'U') IS NOT NULL DROP TABLE [dbo].[Jobs];
+IF OBJECT_ID(N'dbo.Users', N'U') IS NOT NULL DROP TABLE [dbo].[Users];
 GO
 
 /* ---------- Users ---------- */

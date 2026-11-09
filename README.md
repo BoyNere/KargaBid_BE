@@ -13,7 +13,10 @@ src/KargaBid.Api/
   Dtos/          request/response records
   Services/      JWT token issuing
   Controllers/   Auth, Jobs, Bids
-database/schema.sql   hand-written T-SQL equivalent of the EF model (for review)
+database/
+  schema.sql        T-SQL tables (re-runnable; mirrors the EF model)
+  seed.sql          dummy data for local testing
+  setup-local.ps1   one-shot LocalDB setup (create DB + schema + seed)
 ```
 
 ## Endpoints
@@ -30,19 +33,61 @@ database/schema.sql   hand-written T-SQL equivalent of the EF model (for review)
 | POST | `/api/bids/{id}/accept` | Shipper (owner) | accepts bid, rejects the rest, job → InProgress, assigns driver — one transaction |
 | PATCH | `/api/jobs/{id}/status` | Driver (assigned) | `InProgress → Completed` |
 
-## Running locally
+## Running locally (LocalDB)
+
+**1. Create the database, tables and dummy data** (Windows, from the repo root):
+
+```powershell
+.\database\setup-local.ps1            # add -Recreate to drop and rebuild the DB
+```
+
+This creates `KargaBid` on `(localdb)\MSSQLLocalDB`, runs `database/schema.sql`, then `database/seed.sql`. If you prefer raw `sqlcmd` (or SSMS: create the DB, then run the two files against it):
 
 ```bash
-dotnet tool install --global dotnet-ef
+sqlcmd -S "(localdb)\MSSQLLocalDB" -E -Q "CREATE DATABASE KargaBid"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -E -I -d KargaBid -i database/schema.sql
+sqlcmd -S "(localdb)\MSSQLLocalDB" -E -I -d KargaBid -i database/seed.sql
+```
+
+> Use `-I`: the filtered index on `Bids` needs `QUOTED_IDENTIFIER ON`, and sqlcmd defaults to OFF.
+
+**2. Run the API:**
+
+```bash
 cd src/KargaBid.Api
-dotnet ef migrations add InitialCreate
-dotnet ef database update
 dotnet run
 ```
 
-Swagger UI: `https://localhost:7180/swagger`.
+Swagger UI: `https://localhost:7180/swagger`. Ready-made requests for every endpoint are in `src/KargaBid.Api/KargaBid.Api.http`.
 
-`appsettings.Development.json` holds a dev-only JWT key and a LocalDB connection string. For any other environment, supply secrets via user-secrets or environment variables, e.g.:
+### Seeded test data
+
+All passwords are `Password123!`.
+
+| User | Email | Role | Id |
+|---|---|---|---|
+| Maria Santos | maria.santos@kargabid.test | Shipper | `11111111-0000-0000-0000-000000000001` |
+| Jose Reyes | jose.reyes@kargabid.test | Shipper | `11111111-0000-0000-0000-000000000002` |
+| Juan Dela Cruz | juan.delacruz@kargabid.test | Driver | `11111111-0000-0000-0000-000000000003` |
+| Pedro Garcia | pedro.garcia@kargabid.test | Driver | `11111111-0000-0000-0000-000000000004` |
+| Ana Lopez | ana.lopez@kargabid.test | Driver | `11111111-0000-0000-0000-000000000005` |
+
+| Job | Shipper | Status | Bids |
+|---|---|---|---|
+| J1 `22222222-…-000000000001` QC → Batangas | Maria | Open | Juan 8,500 · Pedro 7,900 (pending) |
+| J2 `22222222-…-000000000002` Pasig → Clark | Maria | Open | none |
+| J3 `22222222-…-000000000003` Makati → Tagaytay | Jose | Open | Ana 4,200 (pending) |
+| J4 `22222222-…-000000000004` Valenzuela → Baguio | Maria | InProgress (Pedro) | Pedro accepted · Juan, Ana rejected |
+| J5 `22222222-…-000000000005` Taguig → Lipa | Jose | Completed (Juan) | Juan accepted · Pedro rejected |
+| J6 `22222222-…-000000000006` Caloocan → San Fernando | Jose | Open | Juan 7,600 · Pedro 7,200 · Ana 7,450 (pending) |
+
+Bid ids are `33333333-0000-0000-0000-0000000000NN` (01–11, in the order above). Re-run `seed.sql` to reset the data after testing.
+
+### Database: scripts vs. EF migrations
+
+The SQL scripts and EF migrations both create the same tables, so use one or the other per database: an `InitialCreate` migration will fail against tables created by `schema.sql`. To switch, run migrations against an empty database. `seed.sql` works on top of either.
+
+For any non-local environment, supply secrets via user-secrets or environment variables:
 
 ```bash
 dotnet user-secrets set "Jwt:SigningKey" "<at least 32 random bytes>"
